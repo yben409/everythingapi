@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from app.db import Base
 
 HELD, RELEASED, SETTLED = "HELD", "RELEASED", "SETTLED"
+PENDING, FAILED = "PENDING", "FAILED"
 
 
 class InsufficientFunds(Exception):
@@ -44,13 +45,22 @@ class Hold(Base):
     status: Mapped[str] = mapped_column(String, default=HELD)
 
 
+class Payout(Base):
+    __tablename__ = "payouts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref: Mapped[str] = mapped_column(String, unique=True)  # sent to PayPal as sender_item_id
+    worker_id: Mapped[str] = mapped_column(String)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String, default=PENDING)
+
+
 class Entry(Base):
     """Append-only. Never update or delete rows."""
 
     __tablename__ = "entries"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ref: Mapped[str] = mapped_column(String, unique=True)
-    kind: Mapped[str] = mapped_column(String)  # TOPUP, HOLD, RELEASE, SETTLE, FEE
+    kind: Mapped[str] = mapped_column(String)  # TOPUP, HOLD, RELEASE, SETTLE, FEE, PAYOUT, PAYOUT_FAILED
     wallet_id: Mapped[str | None] = mapped_column(String, nullable=True)
     worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
     task_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -152,3 +162,40 @@ def settle(session: Session, task_id: str, fee_percent: int = 10) -> Hold:
         session.add(Entry(ref=f"fee:{task_id}", kind="FEE", wallet_id=h.wallet_id, task_id=task_id, amount_cents=fee))
     session.commit()
     return h
+
+
+def start_payout(session: Session, worker_id: str, amount_cents: int, ref: str) -> Payout:
+    """Take the amount out of the worker's balance before asking PayPal to send it."""
+    _check_cents(amount_cents)
+    existing = session.scalar(select(Payout).where(Payout.ref == ref))
+    if existing is not None:
+        return existing
+    worker = session.get(Worker, worker_id, with_for_update=True)
+    if worker is None or worker.earned_cents < amount_cents:
+        session.rollback()
+        raise InsufficientFunds(f"worker {worker_id} cannot be paid {amount_cents}")
+    worker.earned_cents -= amount_cents
+    p = Payout(ref=ref, worker_id=worker_id, amount_cents=amount_cents, status=PENDING)
+    session.add(p)
+    session.add(Entry(ref=f"payout:{ref}", kind="PAYOUT", worker_id=worker_id, amount_cents=amount_cents))
+    session.commit()
+    return p
+
+
+def finish_payout(session: Session, ref: str, succeeded: bool) -> Payout | None:
+    """Mark a pending payout SETTLED, or FAILED and give the amount back to the worker.
+
+    Returns None for a ref we never created. Only PENDING payouts change.
+    """
+    p = session.scalar(select(Payout).where(Payout.ref == ref).with_for_update())
+    if p is None or p.status != PENDING:
+        return p
+    if succeeded:
+        p.status = SETTLED
+    else:
+        p.status = FAILED
+        worker = session.get(Worker, p.worker_id, with_for_update=True)
+        worker.earned_cents += p.amount_cents
+        session.add(Entry(ref=f"payout_failed:{ref}", kind="PAYOUT_FAILED", worker_id=p.worker_id, amount_cents=p.amount_cents))
+    session.commit()
+    return p

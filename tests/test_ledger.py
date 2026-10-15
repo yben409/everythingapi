@@ -78,3 +78,46 @@ def test_cannot_settle_after_release(session):
 def test_amount_must_be_positive_int_cents(session, bad):
     with pytest.raises(ValueError):
         ledger.topup(session, "w1", bad, ref="CAPTURE-1")
+
+
+def earn(session, cents=1000):
+    ledger.topup(session, "w1", cents, ref="CAPTURE-1")
+    ledger.hold(session, "w1", "task-1", "worker-a", cents)
+    ledger.settle(session, "task-1", fee_percent=0)
+
+
+def test_payout_succeeds(session):
+    earn(session)
+    ledger.start_payout(session, "worker-a", 600, ref="p1")
+    ledger.start_payout(session, "worker-a", 600, ref="p1")  # idempotent
+    assert session.get(Worker, "worker-a").earned_cents == 400
+    assert ledger.finish_payout(session, "p1", succeeded=True).status == "SETTLED"
+    assert session.get(Worker, "worker-a").earned_cents == 400
+
+
+def test_failed_payout_restores_balance_once(session):
+    earn(session)
+    ledger.start_payout(session, "worker-a", 600, ref="p1")
+    ledger.finish_payout(session, "p1", succeeded=False)
+    ledger.finish_payout(session, "p1", succeeded=False)
+    assert session.get(Worker, "worker-a").earned_cents == 1000
+
+
+def test_payout_status_is_final(session):
+    earn(session)
+    ledger.start_payout(session, "worker-a", 600, ref="p1")
+    ledger.finish_payout(session, "p1", succeeded=True)
+    assert ledger.finish_payout(session, "p1", succeeded=False).status == "SETTLED"
+    assert session.get(Worker, "worker-a").earned_cents == 400
+
+
+def test_payout_above_balance(session):
+    earn(session)
+    with pytest.raises(InsufficientFunds):
+        ledger.start_payout(session, "worker-a", 1001, ref="p1")
+    with pytest.raises(InsufficientFunds):
+        ledger.start_payout(session, "nobody", 1, ref="p2")
+
+
+def test_finish_unknown_payout(session):
+    assert ledger.finish_payout(session, "nope", succeeded=True) is None
