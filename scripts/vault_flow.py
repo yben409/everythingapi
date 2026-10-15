@@ -1,22 +1,18 @@
-import json
 import sys
+import uuid
 
 sys.path.insert(0, ".")
-from app.paypal import capture_order, charge_vaulted, create_order_save_wallet
+from app.paypal import PayPalSandbox
 
-order = create_order_save_wallet("20.00")
-link = next(l["href"] for l in order["links"] if l["rel"] in ("payer-action", "approve"))
-print("Open in a PRIVATE window, log in with the SANDBOX PERSONAL account, accept saving PayPal, and pay:\n", link)
+pp = PayPalSandbox()
+run = uuid.uuid4().hex[:8]
+order = pp.create_topup(2000, ref=f"topup-{run}", save_method=True)
+print("Open in a PRIVATE window, log in with the SANDBOX PERSONAL account, accept saving PayPal, and pay:\n", order.approve_url)
 input("\nPress Enter after approving...")
-result = capture_order(order["id"])
-print("Capture status:", result["status"])
-vault = result.get("payment_source", {}).get("paypal", {}).get("attributes", {}).get("vault", {})
-print("Vault info:", json.dumps(vault, indent=2))
-vault_id = vault.get("id")
-if vault_id:
-    charged = charge_vaulted(vault_id, "5.00")
-    if charged["status"] != "COMPLETED":
-        charged = capture_order(charged["id"])
-    print("Second charge with NO buyer present:", charged["status"])
+cap = pp.capture_topup(order.order_id, ref=f"capture-{run}")
+print("Capture status:", cap.status, "| vault id:", cap.vault_id)
+if cap.vault_id:
+    charged = pp.charge_vaulted(cap.vault_id, 500, ref=f"auto-{run}")
+    print("Second charge with NO buyer present:", charged.status, charged.amount_cents, "cents")
 else:
     print("No vault id returned. Paste the output above and I will check why.")

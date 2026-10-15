@@ -1,14 +1,15 @@
 import sys
+import uuid
 
 sys.path.insert(0, ".")
-from app.paypal import capture_order, create_order
+from app.paypal import PayPalSandbox
 
-order = create_order("20.00")
-print("Order:", order["id"], order["status"])
-link = next(l["href"] for l in order["links"] if l["rel"] in ("payer-action", "approve"))
-print("\nOpen this link, log in with the SANDBOX personal account, and approve:\n", link)
+pp = PayPalSandbox()
+run = uuid.uuid4().hex[:8]
+order = pp.create_topup(2000, ref=f"topup-{run}")
+print("Order:", order.order_id)
+print("\nOpen this link, log in with the SANDBOX personal account, and approve:\n", order.approve_url)
 input("\nPress Enter after approving...")
-result = capture_order(order["id"])
-capture = result["purchase_units"][0]["payments"]["captures"][0]
-print("Status:", result["status"])
-print("Capture ID:", capture["id"], capture["amount"])
+cap = pp.capture_topup(order.order_id, ref=f"capture-{run}")
+print("Status:", cap.status)
+print("Capture ID:", cap.capture_id, cap.amount_cents, "cents")
