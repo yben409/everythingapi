@@ -55,3 +55,48 @@ def capture_order(order_id: str) -> dict:
     )
     r.raise_for_status()
     return r.json()
+
+
+def create_order_save_wallet(amount: str = "20.00", currency: str = "USD") -> dict:
+    r = httpx.post(
+        f"{BASE}/v2/checkout/orders",
+        headers={"Authorization": f"Bearer {token()}", "PayPal-Request-Id": str(uuid.uuid4())},
+        json={
+            "intent": "CAPTURE",
+            "purchase_units": [{"amount": {"currency_code": currency, "value": amount}}],
+            "payment_source": {
+                "paypal": {
+                    "attributes": {
+                        "vault": {
+                            "store_in_vault": "ON_SUCCESS",
+                            "usage_type": "MERCHANT",
+                            "customer_type": "CONSUMER",
+                        }
+                    },
+                    "experience_context": {
+                        "return_url": "https://example.com/return",
+                        "cancel_url": "https://example.com/cancel",
+                        "user_action": "PAY_NOW",
+                    },
+                }
+            },
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def charge_vaulted(vault_id: str, amount: str = "5.00", currency: str = "USD") -> dict:
+    r = httpx.post(
+        f"{BASE}/v2/checkout/orders",
+        headers={"Authorization": f"Bearer {token()}", "PayPal-Request-Id": str(uuid.uuid4())},
+        json={
+            "intent": "CAPTURE",
+            "purchase_units": [{"amount": {"currency_code": currency, "value": amount}}],
+            "payment_source": {"paypal": {"vault_id": vault_id}},
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
