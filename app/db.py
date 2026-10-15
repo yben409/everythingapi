@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 
 
 def init_db(bind=engine) -> None:
-    from app import ledger, webhooks  # noqa: F401  (registers the tables)
+    from app import ledger, registry, webhooks  # noqa: F401  (registers the tables)
 
     Base.metadata.create_all(bind)
 
