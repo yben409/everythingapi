@@ -32,7 +32,8 @@ class PayPalSandbox:
         self._token: str | None = None
         self._token_expires = 0.0
 
-    def _auth(self) -> dict[str, str]:
+    def access_token(self) -> str:
+        """Cached OAuth token. Never print or log it."""
         if self._token is None or time.time() > self._token_expires:
             r = self.http.post(
                 "/v1/oauth2/token",
@@ -43,7 +44,10 @@ class PayPalSandbox:
             body = r.json()
             self._token = body["access_token"]
             self._token_expires = time.time() + body.get("expires_in", 0) - 60
-        return {"Authorization": f"Bearer {self._token}"}
+        return self._token
+
+    def _auth(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.access_token()}"}
 
     def _post(self, path: str, json: dict | None, ref: str | None = None) -> dict:
         headers = self._auth() | {"Content-Type": "application/json"}
@@ -119,6 +123,12 @@ class PayPalSandbox:
             ref,
         )
         return result["batch_header"]["payout_batch_id"]
+
+    def get_payout(self, batch_id: str) -> dict:
+        """Batch status with per-item transaction_status (for checks; webhooks are the source of truth)."""
+        r = self.http.get(f"/v1/payments/payouts/{batch_id}", headers=self._auth())
+        r.raise_for_status()
+        return r.json()
 
     def verify_webhook(self, headers: dict[str, str], body: dict) -> bool:
         """Ask PayPal to verify the signature. False on any missing header or config."""

@@ -12,3 +12,11 @@ Direct dependencies (see `requirements.txt` for pinned versions). Transitive dep
 | python-dotenv | Load `.env` in dev | BSD-3-Clause |
 | SQLAlchemy | Database / ledger | MIT |
 | pytest | Tests | MIT |
+| MCP Python SDK (`mcp`) | MCP client (and later our MCP server) | MIT |
+
+Run with `npx`, not bundled or vendored:
+
+| Project | Use | License |
+|---|---|---|
+| @paypal/mcp | PayPal MCP server (sandbox) | Apache-2.0 |
+| @paypal/agent-toolkit | Tools behind @paypal/mcp | ISC |

@@ -108,6 +108,19 @@ def test_payout():
     assert body["items"][0]["amount"]["value"] == "1.08"
 
 
+def test_get_payout():
+    p, fake = provider({"/v1/payments/payouts/BATCH-1": {"items": [{"transaction_status": "SUCCESS"}]}})
+    assert p.get_payout("BATCH-1")["items"][0]["transaction_status"] == "SUCCESS"
+    req = fake.calls("/v1/payments/payouts/BATCH-1")[0]
+    assert req.method == "GET"
+    assert req.headers["Authorization"] == "Bearer TOKEN"
+
+
+def test_access_token():
+    p, _ = provider({})
+    assert p.access_token() == "TOKEN"
+
+
 @pytest.mark.parametrize("status,expected", [("SUCCESS", True), ("FAILURE", False)])
 def test_verify_webhook(status, expected):
     p, fake = provider({"/v1/notifications/verify-webhook-signature": {"verification_status": status}})
